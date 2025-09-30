@@ -1,0 +1,71 @@
+name: Continuous Integration Pipeline with SonarQube
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build the application (optional)
+        run: npm run build || echo 'No build step'
+
+      - name: Run unit tests with coverage
+        env:
+          JEST_JUNIT_OUTPUT: coverage/junit.xml
+        run: npm run test:ci
+
+      - name: Publish test results to Checks
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Jest Test Results
+          path: coverage/junit.xml
+          reporter: jest-junit
+          fail-on-error: true
+
+      - name: Upload test results to GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-node
+          path: coverage
+          retention-days: 30
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6.0.0
+        env:
+          SONAR_HOST_URL: $http://20.81.139.133:9000
+          SONAR_TOKEN: $sqa_a0b1728ce77229ed73da5b7dc486647de11438ae
+        with:
+          args: >
+            -Dsonar.projectKey=sample-node-app
+            -Dsonar.sources=.
+            -Dsonar.exclusions=node_modules,coverage,tests,*.test.js,*.spec.js
+            -Dsonar.tests=tests
+            -Dsonar.test.inclusions=*.test.js,*.spec.js
+            -Dsonar.coverage.exclusions=node_modules,coverage,tests,*.test.js,*.spec.js
+
+      - name: Create deployment package
+        run: zip -r deployment-package.zip . -x "node_modules/*" "coverage/*" "tests/*"
+
+      - name: Upload deployment package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package-node
+          path: deployment-package.zip
+          retention-days: 90
